@@ -38,6 +38,8 @@ Start the script using the command line:
 python discordrpc.py
 ```
 
+...or, use run.bat
+
 ## Usage
 Once the script is running, your Discord status will automatically update based on the active window. You can customize specific application statuses by modifying the script.
 
