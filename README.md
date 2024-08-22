@@ -26,7 +26,7 @@ pip install time threading pygetwindow pypresence msvcrt json subprocess
 ```
 
 ### Create a Discord Application
-Go to the [Discord Developer Portal](https://discord.com/developers/applications/1275126036262031452/rich-presence/assets) and create a new application. Note the Application ID.
+Go to the [Discord Developer Portal](https://discord.com/developers/applications) and create a new application. Note the Application ID.
 
 ### Configure the Script
 Open discordrpc.py in a text editor, and replace the placeholder Application ID with your own.
