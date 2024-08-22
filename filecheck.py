@@ -12,6 +12,7 @@ default_content = {
 
 overrides_content = {
     "Notepad": {
+        "logo": "rpc_icon",
         "details": "Currently coding",
         "state": "appname"
     }
