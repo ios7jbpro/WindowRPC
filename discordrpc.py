@@ -4,8 +4,6 @@ import subprocess
 import json
 import pystray
 from PIL import Image
-
-# Import the Presence class from pypresence
 from pypresence import Presence
 
 # Discord client ID
@@ -21,10 +19,8 @@ def run_filecheck():
     except subprocess.CalledProcessError as e:
         print(f"Error running filecheck.py: {e}")
 
-# Run filecheck before proceeding
 run_filecheck()
 
-# Load overrides and default settings from JSON files
 def load_json(filename):
     try:
         with open(filename, 'r') as file:
@@ -45,7 +41,6 @@ sorted_overrides = sorted(overrides.items(), key=lambda item: len(item[0]), reve
 default_settings = load_json('default.json').get('default', {})
 interval = int(default_settings.get('interval', 15))
 
-# Linux-specific function to get active window title for KDE Wayland
 def get_active_window_title():
     try:
         window_id = subprocess.check_output(['kdotool', 'getactivewindow']).decode('utf-8').strip()
@@ -76,30 +71,28 @@ def truncate_text(text, max_length=60):
         return text[:max_length - 3] + "..."
     return text
 
-# Global flag to control RPC updates
 rpc_enabled = True
 start_time = time.time()
 
-# Main RPC update loop
 def update_rpc():
     global interval
     try:
         RPC.connect()
     except Exception as e:
         print(f"Error connecting to Discord: {e}")
-        time.sleep(10) # Wait before retrying
+        time.sleep(10)
         return
 
     while True:
         elapsed_time = time.time() - start_time
         elapsed_str = f"{int(elapsed_time // 60)}m {int(elapsed_time % 60)}s"
-
+        
         if rpc_enabled:
             active_window_title = get_active_window_title()
             print(f"Detected window: {active_window_title}")
-
+            
             state, details, logo = check_exe_override(active_window_title)
-
+            
             if state and details:
                 state_message = format_message(state, active_window_title, elapsed_str)
                 details_message = format_message(details, active_window_title, elapsed_str)
@@ -107,7 +100,7 @@ def update_rpc():
                 state_message = format_message(default_settings.get('state', ''), active_window_title, elapsed_str)
                 details_message = format_message(default_settings.get('details', ''), active_window_title, elapsed_str)
                 logo = 'rpc_icon'
-
+            
             state_message = truncate_text(state_message)
             details_message = truncate_text(details_message)
 
@@ -122,7 +115,7 @@ def update_rpc():
             except Exception as e:
                 print(f"Error updating RPC: {e}. Retrying connection...")
                 try:
-                    RPC.reconnect() # Try to reconnect if an error occurs
+                    RPC.reconnect()
                 except:
                     pass
         else:
@@ -133,15 +126,13 @@ def update_rpc():
 
         time.sleep(interval)
 
-### System Tray Icon Logic
+# --- System Tray Icon Logic ---
 
-# Create the RPC icon (a simple dot for this example)
 def create_image():
-    # Generate a simple black dot as a placeholder icon
-    image = Image.new('RGB', (64, 64), 'black')
-    return image
+    # Load the image from a file
+    image_path = 'discord_icon.png' 
+    return Image.open(image_path)
 
-# Functions to be called by the menu items
 def toggle_rpc(icon, item):
     global rpc_enabled
     rpc_enabled = not rpc_enabled
@@ -150,21 +141,18 @@ def toggle_rpc(icon, item):
     if rpc_enabled:
         threading.Thread(target=update_rpc, daemon=True).start()
     else:
-        # Note: RPC.close() is handled inside update_rpc loop
         pass
 
 def refresh_settings(icon, item):
     refresh_files()
 
 def start_rpc_updates_thread():
-    # Start the RPC update loop in a separate thread
     rpc_thread = threading.Thread(target=update_rpc, daemon=True)
     rpc_thread.start()
 
 def on_exit(icon, item):
     icon.stop()
 
-# Main function to start the system tray icon
 def start_tray_icon():
     image = create_image()
     icon = pystray.Icon(
@@ -180,6 +168,5 @@ def start_tray_icon():
     icon.run()
 
 if __name__ == "__main__":
-    # Start the RPC updates and the tray icon in separate threads
     start_rpc_updates_thread()
     start_tray_icon()
