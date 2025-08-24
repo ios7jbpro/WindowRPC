@@ -2,13 +2,16 @@ import time
 import threading
 import subprocess
 import json
-import pynput # For keyboard listening
+import pystray
+from PIL import Image
+
+# Import the Presence class from pypresence
 from pypresence import Presence
 
 # Discord client ID
 client_id = "1275126036262031452"
 RPC = Presence(client_id)
-RPC.connect()
+# RPC.connect() is moved to be called within the main loop to handle reconnections
 
 def run_filecheck():
     """Run filecheck.py to ensure JSON files exist and are correctly set up."""
@@ -73,30 +76,20 @@ def truncate_text(text, max_length=60):
         return text[:max_length - 3] + "..."
     return text
 
-# --- pynput-specific keypress handlers ---
-def on_press(key):
-    global rpc_enabled
-    try:
-        if key.char == 't':
-            rpc_enabled = not rpc_enabled
-            status = "Enabled" if rpc_enabled else "Disabled"
-            print(f"RPC is now {status}")
-        elif key.char == 'r':
-            refresh_files()
-    except AttributeError:
-        # Ignore special keys (e.g., control, alt)
-        pass
-
-def toggle_rpc_thread():
-    # Start a keyboard listener in a separate thread
-    with pynput.keyboard.Listener(on_press=on_press) as listener:
-        listener.join()
-
+# Global flag to control RPC updates
 rpc_enabled = True
 start_time = time.time()
 
+# Main RPC update loop
 def update_rpc():
     global interval
+    try:
+        RPC.connect()
+    except Exception as e:
+        print(f"Error connecting to Discord: {e}")
+        time.sleep(10) # Wait before retrying
+        return
+
     while True:
         elapsed_time = time.time() - start_time
         elapsed_str = f"{int(elapsed_time // 60)}m {int(elapsed_time % 60)}s"
@@ -119,24 +112,74 @@ def update_rpc():
             details_message = truncate_text(details_message)
 
             print(f"Updating RPC with state: '{state_message}', details: '{details_message}', and logo: '{logo}'")
-            RPC.update(
-                state=state_message,
-                details=details_message,
-                large_image=logo,
-                large_text="0.6.1"
-            )
+            try:
+                RPC.update(
+                    state=state_message,
+                    details=details_message,
+                    large_image=logo,
+                    large_text="0.6.1"
+                )
+            except Exception as e:
+                print(f"Error updating RPC: {e}. Retrying connection...")
+                try:
+                    RPC.reconnect() # Try to reconnect if an error occurs
+                except:
+                    pass
         else:
-            fallback_state = truncate_text(f"{elapsed_str} - Current window cannot be detected!")
-            fallback_details = truncate_text("Currently using:")
-
-            RPC.update(
-                state=fallback_state,
-                details=fallback_details
-            )
+            try:
+                RPC.close()
+            except:
+                pass
 
         time.sleep(interval)
 
-# Start the keyboard listener and RPC update loop
-toggle_thread = threading.Thread(target=toggle_rpc_thread, daemon=True)
-toggle_thread.start()
-update_rpc()
+### System Tray Icon Logic
+
+# Create the RPC icon (a simple dot for this example)
+def create_image():
+    # Generate a simple black dot as a placeholder icon
+    image = Image.new('RGB', (64, 64), 'black')
+    return image
+
+# Functions to be called by the menu items
+def toggle_rpc(icon, item):
+    global rpc_enabled
+    rpc_enabled = not rpc_enabled
+    status = "Enabled" if rpc_enabled else "Disabled"
+    print(f"RPC is now {status}")
+    if rpc_enabled:
+        threading.Thread(target=update_rpc, daemon=True).start()
+    else:
+        # Note: RPC.close() is handled inside update_rpc loop
+        pass
+
+def refresh_settings(icon, item):
+    refresh_files()
+
+def start_rpc_updates_thread():
+    # Start the RPC update loop in a separate thread
+    rpc_thread = threading.Thread(target=update_rpc, daemon=True)
+    rpc_thread.start()
+
+def on_exit(icon, item):
+    icon.stop()
+
+# Main function to start the system tray icon
+def start_tray_icon():
+    image = create_image()
+    icon = pystray.Icon(
+        'discordrpc_icon',
+        image,
+        'Discord RPC',
+        menu=pystray.Menu(
+            pystray.MenuItem('Toggle RPC', toggle_rpc),
+            pystray.MenuItem('Refresh Files', refresh_settings),
+            pystray.MenuItem('Exit', on_exit)
+        )
+    )
+    icon.run()
+
+if __name__ == "__main__":
+    # Start the RPC updates and the tray icon in separate threads
+    start_rpc_updates_thread()
+    start_tray_icon()
