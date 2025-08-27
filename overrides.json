@@ -1,7 +1,67 @@
 {
-    "MSI Center": {
-     "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/main/icons/msi.png",
-     "details": "MSI Center",
+    "plasmashell": {
+     "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/icons/plasmashell.png",
+     "details": "KDE Shell",
      "state": "timestamp"
+    },
+    "Dolphin": {
+     "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/icons/dolphin.png",
+     "details": "File Manager(Dolphin)",
+     "state": "timestamp"
+    },
+    "KWrite": {
+     "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/icons/kwrite.png",
+     "details": "Text Editor(KWrite)",
+     "state": "timestamp"
+    },
+    "Discover": {
+     "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/icons/discover.png",
+     "details": "App Store(Discover)",
+     "state": "timestamp"
+    },
+    "Konsole": {
+     "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/icons/konsole.png",
+     "details": "Terminal(Konsole)",
+     "state": "timestamp"
+    },
+    "System Monitor": {
+     "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/icons/system-monitor.png",
+     "details": "System Monitor",
+     "state": "timestamp"
+    },
+    "Zen Browser": {
+     "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/icons/zen-browser.png",
+     "details": "Web Browser(Zen)",
+     "state": "timestamp"
+    },
+    "Steam": {
+     "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/icons/steam.png",
+     "details": "Browsing Steam",
+     "state": "Since timestamp"
+    },
+    "- Discord": {
+     "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/main/icons/discord.png",
+     "details": "Chatting(Discord)",
+     "state": "Since timestamp"
+    },
+    "Bottles": {
+     "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/icons/windows.png",
+     "details": "Bottles",
+     "state": "Running Windows Software"
+    },
+    "Marvel Rivals": {
+     "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/icons/marvelrivals.png",
+     "details": "Game: MARVEL RIVALS[🗲]",
+     "state": "Playing for timestamp"
+    },
+    "HoloCure": {
+     "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/icons/holocure.webp",
+     "details": "Game: HoloCure[▶]",
+     "state": "Playing for timestamp"
+    },
+    "Sober": {
+     "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/icons/roblox.webp",
+     "details": "Game: Roblox",
+     "state": "Playing for timestamp"
     }
 }
