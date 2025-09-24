@@ -49,9 +49,75 @@ def get_active_window_title():
     except (subprocess.CalledProcessError, IndexError):
         return "No active window"
 
+def get_media_info():
+    """Fetch media metadata using playerctl. Returns a dict with title, artist, album, elapsed, and total."""
+    media = {
+        "mtitle": "No media playing",
+        "martist": "Unknown artist",
+        "malbum": "Unknown album",
+        "mtotal": "0:00",
+        "mcollapsed": "0:00"
+    }
+    try:
+        # title
+        title = subprocess.check_output(['playerctl', 'metadata', 'title']).decode('utf-8').strip()
+        if title:
+            media["mtitle"] = title
+
+        # artist
+        artist = subprocess.check_output(['playerctl', 'metadata', 'artist']).decode('utf-8').strip()
+        if artist:
+            media["martist"] = artist
+
+        # album
+        album = subprocess.check_output(['playerctl', 'metadata', 'album']).decode('utf-8').strip()
+        if album:
+            media["malbum"] = album
+
+        # duration (microseconds)
+        length_us = subprocess.check_output(['playerctl', 'metadata', 'mpris:length']).decode('utf-8').strip()
+        if length_us.isdigit():
+            length_sec = int(length_us) // 1000000
+            media["mtotal"] = f"{length_sec // 60}:{length_sec % 60:02d}"
+
+        # check status (Playing / Paused / Stopped)
+        status = subprocess.check_output(['playerctl', 'status']).decode('utf-8').strip()
+
+        if status == "Playing":
+            elapsed_str = subprocess.check_output(['playerctl', 'position']).decode('utf-8').strip()
+            try:
+                elapsed_sec = float(elapsed_str)
+                media["mcollapsed"] = f"{int(elapsed_sec // 60)}:{int(elapsed_sec % 60):02d}"
+            except ValueError:
+                pass
+        elif status == "Paused":
+            media["mcollapsed"] = "Paused"
+        else:
+            media["mcollapsed"] = "Stopped"
+
+    except subprocess.CalledProcessError:
+        pass
+
+    return media
+
+
+
+
 def format_message(template, window_title, elapsed_str):
     """ Replace placeholders in the template with actual values """
-    return template.replace("appname", window_title).replace("timestamp", elapsed_str)
+    media_info = get_media_info()
+    return (
+        template
+        .replace("appname", window_title)
+        .replace("timestamp", elapsed_str)
+        .replace("mtitle", media_info["mtitle"])
+        .replace("martist", media_info["martist"])
+        .replace("malbum", media_info["malbum"])
+        .replace("mtotal", media_info["mtotal"])
+        .replace("mcollapsed", media_info["mcollapsed"])
+    )
+
+
 
 def check_exe_override(window_title):
     for app_name, message in sorted_overrides:
