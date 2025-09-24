@@ -34,6 +34,17 @@
      "details": "Web Browser(Zen)",
      "state": "timestamp"
     },
+    "Mozilla Firefox": {
+     "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/icons/firefox.png",
+     "details": "Web Browser(Firefox)",
+     "state": "timestamp"
+    },
+    "Finamp": {
+     "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/icons/finamp.png",
+     "override_mode": "media",
+     "details": "Listening to mtitle",
+     "state": "mcollapsed / mtotal"
+    },
     "Steam": {
      "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/icons/steam.png",
      "details": "Browsing Steam",
@@ -61,6 +72,7 @@
     },
     "Sober": {
      "logo": "https://raw.githubusercontent.com/ios7jbpro/WindowRPC/refs/heads/icons/roblox.webp",
+     "override_mode": "game",
      "details": "Game: Roblox",
      "state": "Playing for timestamp"
     }
