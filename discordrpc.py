@@ -10,6 +10,7 @@ from pypresence import Presence
 client_id = "1275126036262031452"
 RPC = Presence(client_id)
 
+# --- filecheck + json loading ------------------------------------------------
 def run_filecheck():
     """Run filecheck.py to ensure JSON files exist and are correctly set up."""
     try:
@@ -29,10 +30,11 @@ def load_json(filename):
         return {}
 
 def refresh_files():
-    global overrides, sorted_overrides, default_settings
+    global overrides, sorted_overrides, default_settings, interval
     overrides = load_json('overrides.json')
     sorted_overrides = sorted(overrides.items(), key=lambda item: len(item[0]), reverse=True)
     default_settings = load_json('default.json').get('default', {})
+    interval = int(default_settings.get('interval', 15))
     print("Files refreshed")
 
 overrides = load_json('overrides.json')
@@ -40,12 +42,7 @@ sorted_overrides = sorted(overrides.items(), key=lambda item: len(item[0]), reve
 default_settings = load_json('default.json').get('default', {})
 interval = int(default_settings.get('interval', 15))
 
-# track when script started
-script_start_time = time.time()
-# track when each override first became active
-override_start_times = {}
-
-# --- Helpers ---
+# --- window / media helpers --------------------------------------------------
 def get_active_window_title():
     try:
         window_id = subprocess.check_output(['kdotool', 'getactivewindow']).decode('utf-8').strip()
@@ -61,7 +58,8 @@ def get_all_window_titles():
         for wid in window_ids:
             try:
                 title = subprocess.check_output(['kdotool', 'getwindowname', wid]).decode('utf-8').strip()
-                titles.append(title)
+                if title:
+                    titles.append(title)
             except subprocess.CalledProcessError:
                 continue
         return titles
@@ -72,7 +70,13 @@ def get_active_player():
     try:
         players = subprocess.check_output(['playerctl', '-l']).decode('utf-8').splitlines()
         for player in players:
-            status = subprocess.check_output(['playerctl', '-p', player, 'status']).decode('utf-8').strip()
+            player = player.strip()
+            if not player:
+                continue
+            try:
+                status = subprocess.check_output(['playerctl', '-p', player, 'status']).decode('utf-8').strip()
+            except subprocess.CalledProcessError:
+                continue
             if status == "Playing":
                 return player
         return None
@@ -85,20 +89,22 @@ def get_media_info(player=None):
         "martist": "Unknown artist",
         "malbum": "Unknown album",
         "mtotal": "0:00",
-        "mcollapsed": "0:00"
+        "mcollapsed": "0:00",
+        "mplayer": ""
     }
     if not player:
         return media
     try:
         def get_meta(field):
-            return subprocess.check_output(['playerctl', '-p', player, 'metadata', field]).decode('utf-8').strip()
+            try:
+                return subprocess.check_output(['playerctl', '-p', player, 'metadata', field]).decode('utf-8').strip()
+            except subprocess.CalledProcessError:
+                return ""
 
         title = get_meta('title')
         if title: media["mtitle"] = title
-
         artist = get_meta('artist')
         if artist: media["martist"] = artist
-
         album = get_meta('album')
         if album: media["malbum"] = album
 
@@ -107,26 +113,35 @@ def get_media_info(player=None):
             length_sec = int(length_us) // 1000000
             media["mtotal"] = f"{length_sec // 60}:{length_sec % 60:02d}"
 
-        status = subprocess.check_output(['playerctl', '-p', player, 'status']).decode('utf-8').strip()
+        try:
+            status = subprocess.check_output(['playerctl', '-p', player, 'status']).decode('utf-8').strip()
+        except subprocess.CalledProcessError:
+            status = ""
+
         if status == "Playing":
-            elapsed_sec = float(subprocess.check_output(['playerctl', '-p', player, 'position']).decode('utf-8').strip())
-            media["mcollapsed"] = f"{int(elapsed_sec // 60)}:{int(elapsed_sec % 60):02d}"
+            try:
+                elapsed_str = subprocess.check_output(['playerctl', '-p', player, 'position']).decode('utf-8').strip()
+                elapsed_sec = float(elapsed_str)
+                media["mcollapsed"] = f"{int(elapsed_sec // 60)}:{int(elapsed_sec % 60):02d}"
+            except Exception:
+                media["mcollapsed"] = "0:00"
         elif status == "Paused":
             media["mcollapsed"] = "Paused"
         else:
             media["mcollapsed"] = "Stopped"
 
-    except subprocess.CalledProcessError:
+        media["mplayer"] = player
+    except Exception:
         pass
-
     return media
 
-def truncate_text(text, max_length=60):
-    if len(text) > max_length:
-        return text[:max_length - 3] + "..."
-    return text
+# --- timestamps and override timers -----------------------------------------
+script_start_time = time.time()
+override_start_times = {}  # { override_key: timestamp }
 
 def format_message(template, window_title, total_elapsed_str, override_elapsed_str, active_player=None):
+    if not isinstance(template, str):
+        template = str(template or "")
     media_info = get_media_info(active_player)
     return (
         template
@@ -138,113 +153,122 @@ def format_message(template, window_title, total_elapsed_str, override_elapsed_s
         .replace("malbum", media_info["malbum"])
         .replace("mtotal", media_info["mtotal"])
         .replace("mcollapsed", media_info["mcollapsed"])
+        .replace("mplayer", media_info["mplayer"])
     )
 
-def _match_title(window_title, override_name, match_mode="unimportant"):
-    wt = window_title.lower()
-    on = override_name.lower()
-    if match_mode == "exact":
-        return wt == on
-    elif match_mode == "inline":
-        parts = on.split("*")
-        idx = 0
-        for part in parts:
-            if part == "":
-                continue
-            idx = wt.find(part, idx)
-            if idx == -1:
-                return False
-            idx += len(part)
-        return True
-    else:  # unimportant/default
-        return on in wt
-
-def _make_times_for_override(app_name):
+def _make_times_for_override(key, reset_if_missing=False):
     now = time.time()
-    total_elapsed_str = f"{int((now - script_start_time) // 60)}m {int((now - script_start_time) % 60)}s"
-    override_elapsed = now - override_start_times.get(app_name, now)
+    total_elapsed = now - script_start_time
+    if key not in override_start_times or (reset_if_missing and override_start_times[key] == 0):
+        override_start_times[key] = now
+    override_elapsed = now - override_start_times[key]
+    total_elapsed_str = f"{int(total_elapsed // 60)}m {int(total_elapsed % 60)}s"
     override_elapsed_str = f"{int(override_elapsed // 60)}m {int(override_elapsed % 60)}s"
     return total_elapsed_str, override_elapsed_str
 
+# --- override resolution logic -----------------------------------------------
 def check_exe_override(window_title):
     all_titles = get_all_window_titles()
 
-    # --- 1️⃣ game override (highest priority)
+    # 1) game overrides
     for app_name, message in overrides.items():
         if message.get("override_mode") == "game":
             match_mode = message.get("match_mode", "unimportant")
-            if any(_match_title(t, app_name, match_mode) for t in all_titles):
-                # reset timer if game was previously inactive
-                if app_name not in override_start_times:
-                    override_start_times[app_name] = time.time()
+            found = False
+            if match_mode == "exact":
+                found = any(app_name == t for t in all_titles)
+            else:
+                found = any(app_name.lower() in t.lower() for t in all_titles)
+
+            if found:
+                # game is active
                 total_elapsed_str, override_elapsed_str = _make_times_for_override(app_name)
                 state_message = format_message(message.get('state', ''), window_title, total_elapsed_str, override_elapsed_str)
                 details_message = format_message(message.get('details', ''), window_title, total_elapsed_str, override_elapsed_str)
                 logo = message.get('logo', 'rpc_icon')
                 print(f"Game override active: {app_name}")
-                return state_message, details_message, logo
+                override_start_times[app_name] = override_start_times.get(app_name, time.time())
+                return state_message, details_message, logo, app_name, None
             else:
-                override_start_times.pop(app_name, None)  # game disappeared
+                # game window gone → reset timer for next activation
+                override_start_times[app_name] = 0
 
-    # --- 2️⃣ media override
+    # 2) media overrides
     active_player = get_active_player()
     if active_player:
         for app_name, message in overrides.items():
             if message.get("override_mode") == "media":
-                if message.get("player") and message["player"].lower() != active_player.lower():
+                desired_player = message.get("player")
+                if desired_player and desired_player.lower() != active_player.lower():
                     continue
                 total_elapsed_str, override_elapsed_str = _make_times_for_override(app_name)
                 state_message = format_message(message.get('state', ''), window_title, total_elapsed_str, override_elapsed_str, active_player)
                 details_message = format_message(message.get('details', ''), window_title, total_elapsed_str, override_elapsed_str, active_player)
                 logo = message.get('logo', 'rpc_icon')
                 print(f"Media override active: {app_name} (player: {active_player})")
-                return state_message, details_message, logo
+                return state_message, details_message, logo, app_name, active_player
 
-    # --- 3️⃣ normal app overrides
+    # 3) normal app override
     for app_name, message in sorted_overrides:
         match_mode = message.get("match_mode", "unimportant")
-        if _match_title(window_title, app_name, match_mode):
-            print(f"Override found for {window_title}: {message}")
-            if app_name not in override_start_times:
-                override_start_times[app_name] = time.time()
+        matched = False
+        if match_mode == "exact":
+            matched = (app_name == window_title)
+        else:
+            matched = (app_name.lower() in window_title.lower())
+        if matched:
             total_elapsed_str, override_elapsed_str = _make_times_for_override(app_name)
             state_message = format_message(message.get('state', ''), window_title, total_elapsed_str, override_elapsed_str)
             details_message = format_message(message.get('details', ''), window_title, total_elapsed_str, override_elapsed_str)
             logo = message.get('logo', 'rpc_icon')
-            return state_message, details_message, logo
+            print(f"Override found for {window_title}: {message}")
+            return state_message, details_message, logo, app_name, None
 
-    return None, None, 'rpc_icon'
+    # fallback
+    return None, None, 'rpc_icon', None, None
 
+# --- RPC update loop --------------------------------------------------------
+def truncate_text(text, max_length=60):
+    if not isinstance(text, str):
+        text = str(text or "")
+    if len(text) > max_length:
+        return text[:max_length - 3] + "..."
+    return text
 
-# --- RPC Update Loop ---
 rpc_enabled = True
-start_time = time.time()
 
 def update_rpc():
     global interval
     try:
         RPC.connect()
     except Exception as e:
-        print(f"Error connecting to Discord: {e}")
-        time.sleep(10)
-        return
+        print(f"Error connecting to Discord on start: {e}")
 
     while True:
         if rpc_enabled:
             active_window_title = get_active_window_title()
             print(f"Detected window: {active_window_title}")
-            state, details, logo = check_exe_override(active_window_title)
+
+            state, details, logo, override_key, active_player = check_exe_override(active_window_title)
+
+            if override_key:
+                total_elapsed_str, override_elapsed_str = _make_times_for_override(override_key)
+            else:
+                now = time.time()
+                total_elapsed = now - script_start_time
+                total_elapsed_str = f"{int(total_elapsed // 60)}m {int(total_elapsed % 60)}s"
+                override_elapsed_str = total_elapsed_str
 
             if state and details:
-                state_message = truncate_text(state)
-                details_message = truncate_text(details)
+                state_message = format_message(state, active_window_title, total_elapsed_str, override_elapsed_str, active_player)
+                details_message = format_message(details, active_window_title, total_elapsed_str, override_elapsed_str, active_player)
             else:
-                # fallback defaults
-                elapsed_total = time.time() - script_start_time
-                total_elapsed_str = f"{int(elapsed_total // 60)}m {int(elapsed_total % 60)}s"
-                state_message = truncate_text(format_message(default_settings.get('state', ''), active_window_title, total_elapsed_str, total_elapsed_str))
-                details_message = truncate_text(format_message(default_settings.get('details', ''), active_window_title, total_elapsed_str, total_elapsed_str))
+                state_message = format_message(default_settings.get('state', ''), active_window_title, total_elapsed_str, override_elapsed_str, None)
+                details_message = format_message(default_settings.get('details', ''), active_window_title, total_elapsed_str, override_elapsed_str, None)
                 logo = 'rpc_icon'
+
+            state_message = truncate_text(state_message)
+            details_message = truncate_text(details_message)
 
             print(f"Updating RPC with state: '{state_message}', details: '{details_message}', logo: '{logo}'")
             try:
@@ -255,22 +279,23 @@ def update_rpc():
                     large_text="0.6.1"
                 )
             except Exception as e:
-                print(f"Error updating RPC: {e}. Retrying connection...")
+                print(f"Error updating RPC: {e}. Attempting reconnect...")
                 try:
                     RPC.reconnect()
-                except:
+                except Exception:
                     pass
         else:
             try:
                 RPC.close()
-            except:
+            except Exception:
                 pass
 
         time.sleep(interval)
 
-# --- System Tray ---
+# --- System Tray Icon Logic --------------------------------------------------
 def create_image():
-    return Image.open('discord_icon.png')
+    image_path = 'discord_icon.png'
+    return Image.open(image_path)
 
 def toggle_rpc(icon, item):
     global rpc_enabled
@@ -293,15 +318,17 @@ def refresh_settings(icon, item):
     refresh_files()
 
 def start_rpc_updates_thread():
-    threading.Thread(target=update_rpc, daemon=True).start()
+    rpc_thread = threading.Thread(target=update_rpc, daemon=True)
+    rpc_thread.start()
 
 def on_exit(icon, item):
     icon.stop()
 
 def start_tray_icon():
+    image = create_image()
     icon = pystray.Icon(
         'discordrpc_icon',
-        create_image(),
+        image,
         'Discord RPC',
         menu=pystray.Menu(
             pystray.MenuItem('Toggle RPC', toggle_rpc),
@@ -312,6 +339,7 @@ def start_tray_icon():
     )
     icon.run()
 
+# --- main -------------------------------------------------------------------
 if __name__ == "__main__":
     start_rpc_updates_thread()
     start_tray_icon()
