@@ -49,14 +49,21 @@ class JSONTreeViewer:
         self.refresh_tree()
 
     def move_entry(self, key, direction):
-        if key not in self.keys_order:
-            return
-        idx = self.keys_order.index(key)
-        if direction == "up" and idx > 0:
-            self.keys_order[idx], self.keys_order[idx-1] = self.keys_order[idx-1], self.keys_order[idx]
-        elif direction == "down" and idx < len(self.keys_order)-1:
-            self.keys_order[idx], self.keys_order[idx+1] = self.keys_order[idx+1], self.keys_order[idx]
-        self.refresh_tree()
+      if key not in self.keys_order:
+        return
+      idx = self.keys_order.index(key)
+      if direction == "up" and idx > 0:
+        self.keys_order[idx], self.keys_order[idx-1] = self.keys_order[idx-1], self.keys_order[idx]
+      elif direction == "down" and idx < len(self.keys_order)-1:
+        self.keys_order[idx], self.keys_order[idx+1] = self.keys_order[idx+1], self.keys_order[idx]
+      self.refresh_tree()
+      # re-select the moved item in the tree
+      for item in self.tree.get_children():
+        if self.tree.item(item)['text'] == key:
+            self.tree.selection_set(item)
+            self.tree.see(item)
+            break
+
 
     def delete_entry(self, key):
         if key in self.json_data:
@@ -70,12 +77,14 @@ class JSONTreeViewer:
         self.build_tree("", self.json_data)
 
     def save_json(self, filename="overrides.json"):
-        try:
-            with open(filename, "w", encoding="utf-8") as f:
-                json.dump(self.json_data, f, indent=4)
-            self.show_save_warning()
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to save JSON: {e}")
+       try:
+        # reorder json_data according to keys_order
+        ordered_data = {k: self.json_data[k] for k in self.keys_order if k in self.json_data}
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(ordered_data, f, indent=4)
+        self.show_save_warning()
+       except Exception as e:
+        messagebox.showerror("Error", f"Failed to save JSON: {e}")
 
     def show_save_warning(self):
         warning_win = tk.Toplevel()
@@ -160,7 +169,7 @@ def open_add_entry_dialog(viewer, edit_key=None, below_key=None):
     # match_mode section
     tk.Label(dialog, text="Match Mode").pack(anchor='w', padx=10, pady=2)
     match_var = tk.StringVar(value=entry_data.get("match_mode", "unimportant"))
-    match_modes = [("Unimportant", "unimportant"), ("Inline", "inline"), ("Exact", "exact")]
+    match_modes = [("Unimportant", "unimportant"), ("Exact", "exact")]
     for text, mode in match_modes:
         tk.Radiobutton(dialog, text=text, variable=match_var, value=mode).pack(anchor='w', padx=20)
 
