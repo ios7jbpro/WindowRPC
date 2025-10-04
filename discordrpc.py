@@ -3,6 +3,7 @@ import threading
 import subprocess
 import json
 import pystray
+import requests
 from PIL import Image
 from pypresence import Presence
 
@@ -135,6 +136,34 @@ def get_media_info(player=None):
         pass
     return media
 
+
+def fetch_lastfm_artwork(artist, album, api_key):
+    """Fetch album cover URL from Last.fm"""
+    if not artist or not album or not api_key:
+        return None
+    try:
+        url = "http://ws.audioscrobbler.com/2.0/"
+        params = {
+            "method": "album.getinfo",
+            "api_key": api_key,
+            "artist": artist,
+            "album": album,
+            "format": "json"
+        }
+        response = requests.get(url, params=params, timeout=5)
+        data = response.json()
+        # navigate to the largest image
+        images = data.get("album", {}).get("image", [])
+        for img in reversed(images):
+            if img.get("#text"):
+                return img["#text"]
+        return None
+    except Exception as e:
+        print(f"Error fetching Last.fm artwork: {e}")
+        return None
+
+
+
 # --- timestamps and override timers -----------------------------------------
 script_start_time = time.time()
 override_start_times = {}  # { override_key: timestamp }
@@ -169,63 +198,87 @@ def _make_times_for_override(key, reset_if_missing=False):
 # --- override resolution logic -----------------------------------------------
 def check_exe_override(window_title):
     all_titles = get_all_window_titles()
+    now = time.time()
 
-    # 1) game overrides
+    # --- 1️⃣ game override (highest priority) ---
     for app_name, message in overrides.items():
         if message.get("override_mode") == "game":
-            match_mode = message.get("match_mode", "unimportant")
-            found = False
-            if match_mode == "exact":
-                found = any(app_name == t for t in all_titles)
-            else:
-                found = any(app_name.lower() in t.lower() for t in all_titles)
-
+            # check if any window contains the override name
+            found = any(
+                (t.lower() == app_name.lower() if message.get("match_mode") == "exact" else app_name.lower() in t.lower())
+                for t in all_titles
+            )
             if found:
-                # game is active
-                total_elapsed_str, override_elapsed_str = _make_times_for_override(app_name)
-                state_message = format_message(message.get('state', ''), window_title, total_elapsed_str, override_elapsed_str)
-                details_message = format_message(message.get('details', ''), window_title, total_elapsed_str, override_elapsed_str)
-                logo = message.get('logo', 'rpc_icon')
+                # initialize start time if first seen
+                if app_name not in override_start_times:
+                    override_start_times[app_name] = now
+
+                elapsed_override = now - override_start_times[app_name]
+                elapsed_str = f"{int(elapsed_override // 60)}m {int(elapsed_override % 60)}s"
+
                 print(f"Game override active: {app_name}")
-                override_start_times[app_name] = override_start_times.get(app_name, time.time())
+                state_message = format_message(message.get('state', ''), window_title, '', elapsed_str)
+                details_message = format_message(message.get('details', ''), window_title, '', elapsed_str)
+                logo = message.get('logo', 'rpc_icon')
                 return state_message, details_message, logo, app_name, None
             else:
-                # game window gone → reset timer for next activation
-                override_start_times[app_name] = 0
+                # game not found → reset timer
+                if app_name in override_start_times:
+                    override_start_times[app_name] = now
 
-    # 2) media overrides
+    # --- 2️⃣ media override ---
     active_player = get_active_player()
     if active_player:
-        for app_name, message in overrides.items():
-            if message.get("override_mode") == "media":
-                desired_player = message.get("player")
-                if desired_player and desired_player.lower() != active_player.lower():
-                    continue
-                total_elapsed_str, override_elapsed_str = _make_times_for_override(app_name)
-                state_message = format_message(message.get('state', ''), window_title, total_elapsed_str, override_elapsed_str, active_player)
-                details_message = format_message(message.get('details', ''), window_title, total_elapsed_str, override_elapsed_str, active_player)
-                logo = message.get('logo', 'rpc_icon')
-                print(f"Media override active: {app_name} (player: {active_player})")
-                return state_message, details_message, logo, app_name, active_player
+       media_info = get_media_info(active_player)  # <<< this fixes the NameError
+       for app_name, message in overrides.items():
+        if message.get("override_mode") == "media":
+            if message.get("player") and message["player"].lower() != active_player.lower():
+                continue
+            # initialize start time if first seen
+            if app_name not in override_start_times:
+                override_start_times[app_name] = now
 
-    # 3) normal app override
+            elapsed_override = now - override_start_times[app_name]
+            elapsed_str = f"{int(elapsed_override // 60)}m {int(elapsed_override % 60)}s"
+
+            print(f"Media override active: {app_name} (player: {active_player})")
+            state_message = format_message(message.get('state', ''), window_title, '', elapsed_str, active_player)
+            details_message = format_message(message.get('details', ''), window_title, '', elapsed_str, active_player)
+
+            logo = message.get('logo', 'rpc_icon')
+            # --- fetch album artwork if api key exists ---
+            if "artwork" in message:
+                artwork_url = fetch_lastfm_artwork(media_info["martist"], media_info["malbum"], message["artwork"])
+                if artwork_url:
+                    logo = artwork_url
+
+            return state_message, details_message, logo, app_name, active_player
+
+
+    # --- 3️⃣ normal overrides ---
     for app_name, message in sorted_overrides:
-        match_mode = message.get("match_mode", "unimportant")
-        matched = False
-        if match_mode == "exact":
-            matched = (app_name == window_title)
-        else:
-            matched = (app_name.lower() in window_title.lower())
+        match_mode = message.get("match_mode", "inline")
+        matched = (window_title.lower() == app_name.lower() if match_mode == "exact" else app_name.lower() in window_title.lower())
         if matched:
-            total_elapsed_str, override_elapsed_str = _make_times_for_override(app_name)
+            # initialize start time if first seen
+            if app_name not in override_start_times:
+                override_start_times[app_name] = now
+
+            elapsed_total = now - script_start_time
+            elapsed_override = now - override_start_times[app_name]
+
+            total_elapsed_str = f"{int(elapsed_total // 60)}m {int(elapsed_total % 60)}s"
+            override_elapsed_str = f"{int(elapsed_override // 60)}m {int(elapsed_override % 60)}s"
+
+            print(f"Override found for {window_title}: {message}")
             state_message = format_message(message.get('state', ''), window_title, total_elapsed_str, override_elapsed_str)
             details_message = format_message(message.get('details', ''), window_title, total_elapsed_str, override_elapsed_str)
             logo = message.get('logo', 'rpc_icon')
-            print(f"Override found for {window_title}: {message}")
             return state_message, details_message, logo, app_name, None
 
     # fallback
     return None, None, 'rpc_icon', None, None
+
 
 # --- RPC update loop --------------------------------------------------------
 def truncate_text(text, max_length=60):
