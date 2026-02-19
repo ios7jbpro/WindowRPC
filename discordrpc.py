@@ -201,40 +201,66 @@ def check_exe_override(window_title):
     now = time.time()
 
     # --- 1️⃣ game override (highest priority) ---
+    best_non_ignore_game = None
+    best_ignore_game = None
     for app_name, message in overrides.items():
         if message.get("override_mode") == "game":
-            # check if any window contains the override name
+            # Check if any window matches the game override
             found = any(
                 (t.lower() == app_name.lower() if message.get("match_mode") == "exact" else app_name.lower() in t.lower())
                 for t in all_titles
             )
             if found:
-                # initialize start time if first seen
-                if app_name not in override_start_times:
-                    override_start_times[app_name] = now
+                # Check ignore flag
+                if message.get("ignore", False) == True:
+                    if best_ignore_game is None or len(app_name) > len(best_ignore_game[0]):
+                        best_ignore_game = (app_name, message)
+                else:
+                    if best_non_ignore_game is None or len(app_name) > len(best_non_ignore_game[0]):
+                        best_non_ignore_game = (app_name, message)
 
-                elapsed_override = now - override_start_times[app_name]
-                elapsed_str = f"{int(elapsed_override // 60)}m {int(elapsed_override % 60)}s"
+    # Process game overrides
+    if best_non_ignore_game is not None:
+        app_name, message = best_non_ignore_game
+        # Initialize start time if first seen
+        if app_name not in override_start_times:
+            override_start_times[app_name] = now
 
-                print(f"Game override active: {app_name}")
-                state_message = format_message(message.get('state', ''), window_title, '', elapsed_str)
-                details_message = format_message(message.get('details', ''), window_title, '', elapsed_str)
-                logo = message.get('logo', 'rpc_icon')
-                return state_message, details_message, logo, app_name, None
-            else:
-                # game not found → reset timer
-                if app_name in override_start_times:
-                    override_start_times[app_name] = now
+        elapsed_override = now - override_start_times[app_name]
+        elapsed_str = f"{int(elapsed_override // 60)}m {int(elapsed_override % 60)}s"
+
+        print(f"Game override active: {app_name}")
+        state_message = format_message(message.get('state', ''), window_title, '', elapsed_str)
+        details_message = format_message(message.get('details', ''), window_title, '', elapsed_str)
+        logo = message.get('logo', 'rpc_icon')
+        return state_message, details_message, logo, app_name, None, False
+
+    elif best_ignore_game is not None:
+        print(f"Ignoring RPC for game: {best_ignore_game[0]}")
+        return None, None, None, None, None, True
 
     # --- 2️⃣ media override ---
     active_player = get_active_player()
+    best_non_ignore_media = None
+    best_ignore_media = None
     if active_player:
-       media_info = get_media_info(active_player)  # <<< this fixes the NameError
-       for app_name, message in overrides.items():
-        if message.get("override_mode") == "media":
-            if message.get("player") and message["player"].lower() != active_player.lower():
-                continue
-            # initialize start time if first seen
+        for app_name, message in overrides.items():
+            if message.get("override_mode") == "media":
+                # Check player match
+                if message.get("player") and message["player"].lower() != active_player.lower():
+                    continue
+
+                # Check ignore flag
+                if message.get("ignore", False) == True:
+                    if best_ignore_media is None or len(app_name) > len(best_ignore_media[0]):
+                        best_ignore_media = (app_name, message)
+                else:
+                    if best_non_ignore_media is None or len(app_name) > len(best_non_ignore_media[0]):
+                        best_non_ignore_media = (app_name, message)
+
+        # Process media overrides
+        if best_non_ignore_media is not None:
+            app_name, message = best_non_ignore_media
             if app_name not in override_start_times:
                 override_start_times[app_name] = now
 
@@ -246,38 +272,58 @@ def check_exe_override(window_title):
             details_message = format_message(message.get('details', ''), window_title, '', elapsed_str, active_player)
 
             logo = message.get('logo', 'rpc_icon')
-            # --- fetch album artwork if api key exists ---
+            # Fetch album artwork if api key exists
             if "artwork" in message:
+                media_info = get_media_info(active_player)
                 artwork_url = fetch_lastfm_artwork(media_info["martist"], media_info["malbum"], message["artwork"])
                 if artwork_url:
                     logo = artwork_url
 
-            return state_message, details_message, logo, app_name, active_player
+            return state_message, details_message, logo, app_name, active_player, False
 
+        elif best_ignore_media is not None:
+            print(f"Ignoring RPC for media player: {best_ignore_media[0]}")
+            return None, None, None, None, None, True
 
     # --- 3️⃣ normal overrides ---
+    best_non_ignore_normal = None
+    best_ignore_normal = None
     for app_name, message in sorted_overrides:
         match_mode = message.get("match_mode", "inline")
         matched = (window_title.lower() == app_name.lower() if match_mode == "exact" else app_name.lower() in window_title.lower())
         if matched:
-            # initialize start time if first seen
-            if app_name not in override_start_times:
-                override_start_times[app_name] = now
+            # Check ignore flag
+            if message.get("ignore", False) == True:
+                if best_ignore_normal is None or len(app_name) > len(best_ignore_normal[0]):
+                    best_ignore_normal = (app_name, message)
+            else:
+                if best_non_ignore_normal is None or len(app_name) > len(best_non_ignore_normal[0]):
+                    best_non_ignore_normal = (app_name, message)
 
-            elapsed_total = now - script_start_time
-            elapsed_override = now - override_start_times[app_name]
+    # Process normal overrides
+    if best_non_ignore_normal is not None:
+        app_name, message = best_non_ignore_normal
+        if app_name not in override_start_times:
+            override_start_times[app_name] = now
 
-            total_elapsed_str = f"{int(elapsed_total // 60)}m {int(elapsed_total % 60)}s"
-            override_elapsed_str = f"{int(elapsed_override // 60)}m {int(elapsed_override % 60)}s"
+        elapsed_total = now - script_start_time
+        elapsed_override = now - override_start_times[app_name]
 
-            print(f"Override found for {window_title}: {message}")
-            state_message = format_message(message.get('state', ''), window_title, total_elapsed_str, override_elapsed_str)
-            details_message = format_message(message.get('details', ''), window_title, total_elapsed_str, override_elapsed_str)
-            logo = message.get('logo', 'rpc_icon')
-            return state_message, details_message, logo, app_name, None
+        total_elapsed_str = f"{int(elapsed_total // 60)}m {int(elapsed_total % 60)}s"
+        override_elapsed_str = f"{int(elapsed_override // 60)}m {int(elapsed_override % 60)}s"
 
-    # fallback
-    return None, None, 'rpc_icon', None, None
+        print(f"Override found for {window_title}: {message}")
+        state_message = format_message(message.get('state', ''), window_title, total_elapsed_str, override_elapsed_str)
+        details_message = format_message(message.get('details', ''), window_title, total_elapsed_str, override_elapsed_str)
+        logo = message.get('logo', 'rpc_icon')
+        return state_message, details_message, logo, app_name, None, False
+
+    elif best_ignore_normal is not None:
+        print(f"Ignoring RPC for app: {best_ignore_normal[0]}")
+        return None, None, None, None, None, True
+
+    # Fallback: no overrides found
+    return None, None, 'rpc_icon', None, None, False
 
 
 # --- RPC update loop --------------------------------------------------------
@@ -302,8 +348,20 @@ def update_rpc():
             active_window_title = get_active_window_title()
             print(f"Detected window: {active_window_title}")
 
-            state, details, logo, override_key, active_player = check_exe_override(active_window_title)
+            # Check for overrides including ignore flag
+            state, details, logo, override_key, active_player, ignore = check_exe_override(active_window_title)
 
+            # Handle ignore flag - completely hide RPC
+            if ignore:
+                print("Hiding RPC due to ignore flag")
+                try:
+                    RPC.clear()
+                except Exception as e:
+                    print(f"Error clearing RPC: {e}")
+                time.sleep(interval)
+                continue
+
+            # Normal RPC processing
             if override_key:
                 total_elapsed_str, override_elapsed_str = _make_times_for_override(override_key)
             else:
