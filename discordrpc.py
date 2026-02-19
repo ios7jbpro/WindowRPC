@@ -387,7 +387,7 @@ def update_rpc():
                     state=state_message,
                     details=details_message,
                     large_image=logo,
-                    large_text="0.6.1"
+                    large_text="0.6.1-linux(KDE)"
                 )
             except Exception as e:
                 print(f"Error updating RPC: {e}. Attempting reconnect...")
@@ -454,3 +454,4 @@ def start_tray_icon():
 if __name__ == "__main__":
     start_rpc_updates_thread()
     start_tray_icon()
+
