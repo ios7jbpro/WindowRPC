@@ -1,58 +1,157 @@
-# WindowRPC
-WindowRPC is a Python-based tool that automatically updates your Discord status with your currently focused window as Rich Presence. It offers flexible options such as custom statuses per application, allowing you to tailor your Discord presence to your preferences.
+# customization guide
 
-## Supported Platforms
-Windows(this branch)
-
-[Linux(KDE Plasma Wayland)](https://github.com/ios7jbpro/WindowRPC/tree/kde-linux)
-
-## Features
-- Automatically updates Discord Rich Presence based on the currently active window.
-- Customize your status for specific applications.
-
-### These features do NOT work in Windows releases, because they are not possible to implement.
-[x] override_mode=media
-
-[x] Any of the media aliases(mtitle, martist, etc)
-
-## Installation
-To get started with WindowRPC:
-
-### Clone the Repository
-Clone this repository to your local machine:
+everything is controlled through:
 
 ```
-git clone https://github.com/yourusername/WindowRPC.git
-cd WindowRPC
+overrides.json
 ```
 
-### Install Dependencies
-Ensure you have Python installed, then install the required dependencies using pip:
+each key in the JSON is something to match against a window title.
 
-```
-pip install pygetwindow pypresence pystray
-```
+basic structure:
 
-Also install kdotool and playerctl from your system's repositories.
-
-### Create a Discord Application
-Go to the [Discord Developer Portal](https://discord.com/developers/applications) and create a new application. The application name will be what's shown as the application name in the rich presence. Note the Application ID.
-
-
-### Run the Script
-Start the script using the command line:
-
-```
-python discordrpc.py
+```json
+{
+  "App Name": {
+    "override_mode": "normal",
+    "match_mode": "inline",
+    "state": "Using appname",
+    "details": "Active for timestamp",
+    "logo": "rpc_icon"
+  }
+}
 ```
 
-...or, use run.bat
+---
 
-## Usage
-Once the script is running, your Discord status will automatically update based on the active window. You can customize specific application statuses by modifying the script.
+## override modes
 
-## Contributors
-- ios7jbpro
-- kurtbahartr
-- ChatGPT(i have problems i know)
-- This project was intended to be AI-generated only. However, simple contributions that remain easy for AI to parse and understand are welcome. Please submit issues or pull requests that align with this guideline.
+### 1️⃣ normal
+
+matches the **active window title**
+
+```json
+"Firefox": {
+  "override_mode": "normal",
+  "match_mode": "inline",
+  "state": "Browsing",
+  "details": "On appname"
+}
+```
+
+* `inline` → matches if text exists anywhere
+* `exact` → must match exactly
+
+---
+
+### 2️⃣ game (highest priority)
+
+triggers if **any matching window exists**, even if not focused.
+
+```json
+"Minecraft": {
+  "override_mode": "game",
+  "match_mode": "inline",
+  "state": "Playing Minecraft",
+  "details": "Session: timestamp"
+}
+```
+
+game overrides override everything else.
+
+---
+
+### 3️⃣ media
+
+triggers when a media player is actively playing.
+
+```json
+"Spotify": {
+  "override_mode": "media",
+  "player": "spotify",
+  "state": "Listening to mtitle",
+  "details": "By martist"
+}
+```
+
+available media placeholders:
+
+* `mtitle`
+* `martist`
+* `malbum`
+* `mtotal`
+* `mcollapsed`
+* `mplayer`
+
+---
+
+## hiding RPC for specific apps
+
+add:
+
+```json
+"ignore": true
+```
+
+example:
+
+```json
+"Steam": {
+  "override_mode": "normal",
+  "ignore": true
+}
+```
+
+this completely clears discord presence while steam is active.
+
+---
+
+## available placeholders
+
+you can use these in `state` or `details`:
+
+| placeholder      | meaning                       |
+| ---------------- | ----------------------------- |
+| `appname`        | window title                  |
+| `timestamp`      | time since override activated |
+| `totaltimestamp` | time since script started     |
+| `mtitle`         | song title                    |
+| `martist`        | artist                        |
+| `malbum`         | album                         |
+| `mtotal`         | total duration                |
+| `mcollapsed`     | elapsed or paused             |
+| `mplayer`        | media player name             |
+
+example:
+
+```json
+"Code": {
+  "override_mode": "normal",
+  "state": "Coding in appname",
+  "details": "Focused for timestamp"
+}
+```
+
+---
+
+## default fallback
+
+if nothing matches, `default.json` is used:
+
+```json
+{
+  "default": {
+    "state": "Using appname",
+    "details": "Active for totaltimestamp",
+    "interval": 15
+  }
+}
+```
+
+---
+
+## applying changes
+
+you don’t need to restart the script.
+
+use tray icon → **Refresh Files**
