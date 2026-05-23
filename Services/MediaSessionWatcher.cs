@@ -169,7 +169,7 @@ internal sealed class MediaSessionWatcher : IDisposable
             var mediaProperties = await session.TryGetMediaPropertiesAsync();
             var timeline = session.GetTimelineProperties();
 
-            return new MediaSnapshot
+            var snapshot = new MediaSnapshot
             {
                 Title = string.IsNullOrWhiteSpace(mediaProperties?.Title) ? "No media playing" : mediaProperties.Title,
                 Artist = string.IsNullOrWhiteSpace(mediaProperties?.Artist) ? "Unknown artist" : mediaProperties.Artist,
@@ -182,10 +182,15 @@ internal sealed class MediaSessionWatcher : IDisposable
                 IsPlaying = isPlaying,
                 IsPaused = isPaused
             };
+
+            DiagnosticLog.Write(
+                $"Media snapshot: playing={snapshot.IsPlaying}, paused={snapshot.IsPaused}, title='{snapshot.Title}', artist='{snapshot.Artist}', album='{snapshot.Album}', player='{snapshot.Player}', total={snapshot.TotalSeconds}, position={snapshot.PositionSeconds}.");
+
+            return snapshot;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Media snapshot update failed: {ex}");
+            DiagnosticLog.Write($"Media snapshot update failed: {ex}");
             return MediaSnapshot.Empty;
         }
     }

@@ -31,8 +31,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
 
         _configurationService.Start();
-        _mediaSessionWatcher.Start();
         _presenceCoordinator.Start();
+        _mediaSessionWatcher.Start();
     }
 
     private ContextMenuStrip BuildMenu()

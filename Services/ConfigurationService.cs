@@ -53,6 +53,18 @@ internal sealed class ConfigurationService : IDisposable
         Reload();
     }
 
+    public void SaveDefaultSettings(DefaultSettings settings)
+    {
+        var defaultPath = Path.Combine(BaseDirectory, "default.json");
+        var document = new DefaultSettingsDocument
+        {
+            Default = settings
+        };
+
+        File.WriteAllText(defaultPath, JsonSerializer.Serialize(document, _jsonOptions));
+        Reload();
+    }
+
     public void Dispose()
     {
         if (_watcher is null)

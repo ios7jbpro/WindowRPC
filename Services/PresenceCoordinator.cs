@@ -41,6 +41,7 @@ internal sealed class PresenceCoordinator : IDisposable
         _configurationService.ConfigurationChanged += OnConfigurationChanged;
         _windowWatcher.ForegroundChanged += OnForegroundChanged;
         _mediaSessionWatcher.MediaChanged += OnMediaChanged;
+        _currentMedia = _mediaSessionWatcher.Current;
         _windowWatcher.Start();
         _fallbackTimer.Start();
         Refresh();
@@ -107,25 +108,46 @@ internal sealed class PresenceCoordinator : IDisposable
 
         if (gameRule is not null)
         {
-            return BuildPresence(gameRule.Name, gameRule.Entry, activeWindow, _currentMedia, hidden: gameRule.Entry.Ignore);
+            DiagnosticLog.Write($"Presence matched game override '{gameRule.Name}'.");
+            return BuildPresence(gameRule.Name, gameRule.Entry, activeWindow, _currentMedia, hidden: ShouldHideOverride(config, gameRule.Entry));
         }
 
         if (_currentMedia.IsOverrideEligible)
         {
+            DiagnosticLog.Write(
+                $"Media eligible: title='{_currentMedia.Title}', artist='{_currentMedia.Artist}', album='{_currentMedia.Album}', player='{_currentMedia.Player}', total={_currentMedia.TotalSeconds}, position={_currentMedia.PositionSeconds}.");
+
             var mediaRule = config.Overrides
                 .Where(rule => string.Equals(rule.Entry.OverrideMode, "media", StringComparison.OrdinalIgnoreCase))
                 .FirstOrDefault(rule => MediaMatches(rule, _currentMedia));
 
             if (mediaRule is not null)
             {
-                return BuildPresence(mediaRule.Name, mediaRule.Entry, activeWindow, _currentMedia, hidden: mediaRule.Entry.Ignore, useArtwork: true);
+                DiagnosticLog.Write($"Presence matched media override '{mediaRule.Name}'.");
+                return BuildPresence(mediaRule.Name, mediaRule.Entry, activeWindow, _currentMedia, hidden: ShouldHideOverride(config, mediaRule.Entry), useArtwork: true);
             }
+
+            DiagnosticLog.Write("Media was eligible, but no media override matched.");
+        }
+        else if (_currentMedia.IsActive)
+        {
+            DiagnosticLog.Write(
+                $"Media active but not eligible: playing={_currentMedia.IsPlaying}, paused={_currentMedia.IsPaused}, title='{_currentMedia.Title}', player='{_currentMedia.Player}'.");
         }
 
         var normalRule = config.Overrides.FirstOrDefault(rule => WindowMatches(rule.Name, activeWindow, rule.Entry.MatchMode));
         if (normalRule is not null)
         {
-            return BuildPresence(normalRule.Name, normalRule.Entry, activeWindow, _currentMedia, hidden: normalRule.Entry.Ignore);
+            DiagnosticLog.Write($"Presence matched normal override '{normalRule.Name}'.");
+            return BuildPresence(normalRule.Name, normalRule.Entry, activeWindow, _currentMedia, hidden: ShouldHideOverride(config, normalRule.Entry));
+        }
+
+        if (config.Default.WhitelistMode)
+        {
+            return new ResolvedPresence
+            {
+                Hidden = true
+            };
         }
 
         var elapsed = FormatElapsed(_sessionStopwatch.Elapsed);
@@ -136,6 +158,11 @@ internal sealed class PresenceCoordinator : IDisposable
             Logo = "rpc_icon",
             Hidden = false
         };
+    }
+
+    private static bool ShouldHideOverride(RuntimeConfiguration config, OverrideEntry entry)
+    {
+        return !config.Default.WhitelistMode && entry.Ignore;
     }
 
     private ResolvedPresence BuildPresence(
@@ -172,11 +199,13 @@ internal sealed class PresenceCoordinator : IDisposable
                 var artworkUrl = _artworkService.ResolveArtworkUrlAsync(entry, media).GetAwaiter().GetResult();
                 if (!string.IsNullOrWhiteSpace(artworkUrl))
                 {
+                    DiagnosticLog.Write($"Resolved artwork for '{ruleName}': {artworkUrl}");
                     logo = artworkUrl;
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                DiagnosticLog.Write($"Artwork resolution failed for '{ruleName}': {ex.Message}");
                 // Keep the configured logo if artwork providers fail.
             }
         }
@@ -226,18 +255,8 @@ internal sealed class PresenceCoordinator : IDisposable
 
     private static bool MediaMatches(OverrideRule rule, MediaSnapshot media)
     {
-        var configuredPlayerFilter = !string.IsNullOrWhiteSpace(rule.Entry.Player)
-            ? rule.Entry.Player.Trim()
-            : string.Equals(rule.Name, LegacyGenericMediaOverrideName, StringComparison.OrdinalIgnoreCase)
-                ? null
-                : rule.Name.Trim();
-
-        if (string.IsNullOrWhiteSpace(configuredPlayerFilter))
-        {
-            return true;
-        }
-
-        if (!PlayerMatches(configuredPlayerFilter, media.Player))
+        if (!string.IsNullOrWhiteSpace(rule.Entry.Player)
+            && !PlayerMatches(rule.Entry.Player.Trim(), media.Player))
         {
             return false;
         }
@@ -322,7 +341,7 @@ internal sealed class PresenceCoordinator : IDisposable
     {
         if (presence.Hidden)
         {
-            Debug.WriteLine("Presence hidden due to ignore override.");
+            Debug.WriteLine("Presence hidden due to ignore or whitelist mode.");
             _ = _discordRpcClient.ClearPresenceAsync();
             return;
         }

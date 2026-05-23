@@ -17,10 +17,12 @@ internal sealed class OverridesEditorForm : Form
     private readonly ForegroundWindowWatcher _windowWatcher;
     private readonly BindingList<OverrideEditorItem> _items;
     private readonly DataGridView _grid;
+    private readonly CheckBox _whitelistModeCheckBox;
     private readonly TextBox _nameTextBox;
     private readonly ComboBox _overrideModeComboBox;
     private readonly ComboBox _matchModeComboBox;
     private readonly CheckBox _ignoreCheckBox;
+    private readonly Label _ignoreWhitelistWarningLabel;
     private readonly Label _playerLabel;
     private readonly TextBox _logoTextBox;
     private readonly TextBox _detailsTextBox;
@@ -178,17 +180,20 @@ internal sealed class OverridesEditorForm : Form
         editorLayout.Controls.Add(editorTitle, 0, 0);
         editorLayout.SetColumnSpan(editorTitle, 2);
 
-        (_, _nameTextBox) = AddTextRow(editorLayout, 1, "Name");
-        _overrideModeComboBox = AddComboRow(editorLayout, 2, "Override mode", ["normal", "game", "media"]);
-        _matchModeComboBox = AddComboRow(editorLayout, 3, "Match mode", ["inline", "exact"]);
-        (_, _ignoreCheckBox) = AddCheckRow(editorLayout, 4, "Ignore this match");
-        (_, _logoTextBox) = AddTextRow(editorLayout, 5, "Logo");
-        _detailsTextBox = AddMultilineRow(editorLayout, 6, "Details");
-        _stateTextBox = AddMultilineRow(editorLayout, 7, "State");
-        (_playerLabel, _playerTextBox) = AddTextRow(editorLayout, 8, "Player filter");
-        (_artworkLabel, _artworkTextBox) = AddTextRow(editorLayout, 9, "Artwork key");
-        (_artworkSourcesLabel, _artworkSourcesTextBox) = AddTextRow(editorLayout, 10, "Artwork sources");
-        (_mprogressLabel, _mprogressCheckBox) = AddCheckRow(editorLayout, 11, "Use mprogress timestamps");
+        (_, _whitelistModeCheckBox) = AddCheckRow(editorLayout, 1, "Whitelist mode");
+        _whitelistModeCheckBox.Checked = _configurationService.Current.Default.WhitelistMode;
+
+        (_, _nameTextBox) = AddTextRow(editorLayout, 2, "Name");
+        _overrideModeComboBox = AddComboRow(editorLayout, 3, "Override mode", ["normal", "game", "media"]);
+        _matchModeComboBox = AddComboRow(editorLayout, 4, "Match mode", ["inline", "exact"]);
+        (_ignoreCheckBox, _ignoreWhitelistWarningLabel) = AddCheckWarningRow(editorLayout, 5, "Ignore this match");
+        (_, _logoTextBox) = AddTextRow(editorLayout, 6, "Logo");
+        _detailsTextBox = AddMultilineRow(editorLayout, 7, "Details");
+        _stateTextBox = AddMultilineRow(editorLayout, 8, "State");
+        (_playerLabel, _playerTextBox) = AddTextRow(editorLayout, 9, "Player filter");
+        (_artworkLabel, _artworkTextBox) = AddTextRow(editorLayout, 10, "Artwork key");
+        (_artworkSourcesLabel, _artworkSourcesTextBox) = AddTextRow(editorLayout, 11, "Artwork sources");
+        (_mprogressLabel, _mprogressCheckBox) = AddCheckRow(editorLayout, 12, "Use mprogress timestamps");
 
         var usageLabel = new Label
         {
@@ -198,7 +203,7 @@ internal sealed class OverridesEditorForm : Form
             Dock = DockStyle.Top,
             Margin = new Padding(0, 12, 0, 0)
         };
-        editorLayout.Controls.Add(usageLabel, 0, 12);
+        editorLayout.Controls.Add(usageLabel, 0, 13);
         editorLayout.SetColumnSpan(usageLabel, 2);
 
         var guidanceLabel = new Label
@@ -208,7 +213,7 @@ internal sealed class OverridesEditorForm : Form
             Height = 54,
             Dock = DockStyle.Top
         };
-        editorLayout.Controls.Add(guidanceLabel, 0, 13);
+        editorLayout.Controls.Add(guidanceLabel, 0, 14);
         editorLayout.SetColumnSpan(guidanceLabel, 2);
 
         var previewTitle = new Label
@@ -218,7 +223,7 @@ internal sealed class OverridesEditorForm : Form
             AutoSize = true,
             Margin = new Padding(0, 16, 0, 8)
         };
-        editorLayout.Controls.Add(previewTitle, 0, 14);
+        editorLayout.Controls.Add(previewTitle, 0, 15);
         editorLayout.SetColumnSpan(previewTitle, 2);
 
         _previewCard = new Panel
@@ -317,7 +322,7 @@ internal sealed class OverridesEditorForm : Form
         _previewCard.Controls.Add(_previewTimestampLabel);
         _previewCard.Controls.Add(_previewLogoWarningLabel);
 
-        editorLayout.Controls.Add(_previewCard, 0, 15);
+        editorLayout.Controls.Add(_previewCard, 0, 16);
         editorLayout.SetColumnSpan(_previewCard, 2);
 
         editorPanel.Controls.Add(editorLayout);
@@ -339,7 +344,7 @@ internal sealed class OverridesEditorForm : Form
 
         var saveButton = new Button
         {
-            Text = "Save Overrides",
+            Text = "Save Settings",
             AutoSize = true
         };
         saveButton.Click += (_, _) => SaveOverrides();
@@ -433,10 +438,15 @@ internal sealed class OverridesEditorForm : Form
     {
         _nameTextBox.TextChanged += (_, _) => UpdateSelectedItem(item => item.Name = _nameTextBox.Text.Trim());
         _overrideModeComboBox.SelectedIndexChanged += (_, _) =>
-            UpdateSelectedItem(item => item.OverrideMode = _overrideModeComboBox.SelectedItem?.ToString() ?? "normal");
+            UpdateSelectedItem(item =>
+            {
+                item.OverrideMode = _overrideModeComboBox.SelectedItem?.ToString() ?? "normal";
+                UpdateMediaFieldVisibility(item.OverrideMode);
+            });
         _matchModeComboBox.SelectedIndexChanged += (_, _) =>
             UpdateSelectedItem(item => item.MatchMode = _matchModeComboBox.SelectedItem?.ToString() ?? "inline");
         _ignoreCheckBox.CheckedChanged += (_, _) => UpdateSelectedItem(item => item.Ignore = _ignoreCheckBox.Checked);
+        _whitelistModeCheckBox.CheckedChanged += (_, _) => UpdateWhitelistWarning();
         _logoTextBox.TextChanged += (_, _) => UpdateSelectedItem(item => item.Logo = _logoTextBox.Text);
         _detailsTextBox.TextChanged += (_, _) => UpdateSelectedItem(item => item.Details = _detailsTextBox.Text);
         _stateTextBox.TextChanged += (_, _) => UpdateSelectedItem(item => item.State = _stateTextBox.Text);
@@ -511,6 +521,7 @@ internal sealed class OverridesEditorForm : Form
             _artworkSourcesTextBox.Text = item.ArtworkSources;
             _mprogressCheckBox.Checked = item.MProgress;
             UpdateMediaFieldVisibility(item.OverrideMode);
+            UpdateWhitelistWarning();
             UpdatePreview(item);
         }
         finally
@@ -545,8 +556,16 @@ internal sealed class OverridesEditorForm : Form
             overrides[item.Name.Trim()] = item.ToOverrideEntry();
         }
 
+        var currentDefault = _configurationService.Current.Default;
+        _configurationService.SaveDefaultSettings(new DefaultSettings
+        {
+            WhitelistMode = _whitelistModeCheckBox.Checked,
+            Details = currentDefault.Details,
+            State = currentDefault.State,
+            Interval = currentDefault.Interval
+        });
         _configurationService.SaveOverrides(overrides);
-        MessageBox.Show(this, "Overrides saved and reloaded.", "WindowRPC");
+        MessageBox.Show(this, "Settings saved and reloaded.", "WindowRPC");
     }
 
     private OverrideEditorItem? GetSelectedItem()
@@ -605,6 +624,11 @@ internal sealed class OverridesEditorForm : Form
         _artworkSourcesTextBox.Visible = isMedia;
         _mprogressLabel.Visible = isMedia;
         _mprogressCheckBox.Visible = isMedia;
+    }
+
+    private void UpdateWhitelistWarning()
+    {
+        _ignoreWhitelistWarningLabel.Visible = _whitelistModeCheckBox.Checked;
     }
 
     private void UpdatePreview(OverrideEditorItem? item)
@@ -799,6 +823,39 @@ internal sealed class OverridesEditorForm : Form
         layout.Controls.Add(textLabel, 0, row);
         layout.Controls.Add(checkBox, 1, row);
         return (textLabel, checkBox);
+    }
+
+    private static (CheckBox checkBox, Label warningLabel) AddCheckWarningRow(TableLayoutPanel layout, int row, string label)
+    {
+        EnsureRow(layout, row);
+        var textLabel = MakeLabel(label);
+        var panel = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            Dock = DockStyle.Top,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Margin = new Padding(0, 0, 0, 8)
+        };
+        var checkBox = new CheckBox
+        {
+            AutoSize = true,
+            Margin = new Padding(0, 3, 8, 0)
+        };
+        var warningLabel = new Label
+        {
+            Text = "Whitelist mode is on; this setting will be ignored.",
+            AutoSize = true,
+            ForeColor = Color.FromArgb(190, 126, 0),
+            Margin = new Padding(0, 5, 0, 0),
+            Visible = false
+        };
+
+        panel.Controls.Add(checkBox);
+        panel.Controls.Add(warningLabel);
+        layout.Controls.Add(textLabel, 0, row);
+        layout.Controls.Add(panel, 1, row);
+        return (checkBox, warningLabel);
     }
 
     private static void EnsureRow(TableLayoutPanel layout, int row)

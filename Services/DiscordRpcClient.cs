@@ -62,10 +62,12 @@ internal sealed class DiscordRpcClient : IDisposable
             };
 
             await WriteFrameAsync(_stream, FrameOpcode, payload, cancellationToken).ConfigureAwait(false);
-            await DrainResponseAsync(_stream, cancellationToken).ConfigureAwait(false);
+            var response = await DrainResponseAsync(_stream, cancellationToken).ConfigureAwait(false);
+            LogDiscordResponse("ClearPresence", response);
         }
-        catch
+        catch (Exception ex)
         {
+            DiagnosticLog.Write($"Discord ClearPresence failed: {ex.Message}");
             DisposeStream();
         }
         finally
@@ -93,8 +95,8 @@ internal sealed class DiscordRpcClient : IDisposable
                     pid = Environment.ProcessId,
                     activity = new
                     {
-                        state = presence.State,
-                        details = presence.Details,
+                        state = NullIfWhiteSpace(presence.State),
+                        details = NullIfWhiteSpace(presence.Details),
                         timestamps = presence.StartTimestampUnix.HasValue && presence.EndTimestampUnix.HasValue
                             ? new
                             {
@@ -113,10 +115,12 @@ internal sealed class DiscordRpcClient : IDisposable
             };
 
             await WriteFrameAsync(_stream, FrameOpcode, payload, cancellationToken).ConfigureAwait(false);
-            await DrainResponseAsync(_stream, cancellationToken).ConfigureAwait(false);
+            var response = await DrainResponseAsync(_stream, cancellationToken).ConfigureAwait(false);
+            LogDiscordResponse($"SetPresence state='{presence.State}' details='{presence.Details}' logo='{presence.Logo}'", response);
         }
-        catch
+        catch (Exception ex)
         {
+            DiagnosticLog.Write($"Discord SetPresence failed: {ex.Message}");
             DisposeStream();
         }
         finally
@@ -156,7 +160,8 @@ internal sealed class DiscordRpcClient : IDisposable
                 };
 
                 await WriteFrameAsync(candidate, HandshakeOpcode, handshake, cancellationToken).ConfigureAwait(false);
-                await DrainResponseAsync(candidate, cancellationToken).ConfigureAwait(false);
+                var response = await DrainResponseAsync(candidate, cancellationToken).ConfigureAwait(false);
+                LogDiscordResponse("Handshake", response);
                 _stream = candidate;
                 return;
             }
@@ -167,18 +172,19 @@ internal sealed class DiscordRpcClient : IDisposable
         }
     }
 
-    private async Task DrainResponseAsync(NamedPipeClientStream stream, CancellationToken cancellationToken)
+    private async Task<string> DrainResponseAsync(NamedPipeClientStream stream, CancellationToken cancellationToken)
     {
         var header = new byte[8];
         await ReadExactAsync(stream, header, cancellationToken).ConfigureAwait(false);
         var length = BitConverter.ToInt32(header, 4);
         if (length <= 0)
         {
-            return;
+            return string.Empty;
         }
 
         var payload = new byte[length];
         await ReadExactAsync(stream, payload, cancellationToken).ConfigureAwait(false);
+        return Encoding.UTF8.GetString(payload);
     }
 
     private async Task WriteFrameAsync(
@@ -212,6 +218,22 @@ internal sealed class DiscordRpcClient : IDisposable
 
             offset += read;
         }
+    }
+
+    private static string? NullIfWhiteSpace(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static void LogDiscordResponse(string operation, string response)
+    {
+        if (string.IsNullOrWhiteSpace(response))
+        {
+            DiagnosticLog.Write($"Discord {operation}: empty response");
+            return;
+        }
+
+        DiagnosticLog.Write($"Discord {operation}: {response}");
     }
 
     private void DisposeStream()

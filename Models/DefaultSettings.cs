@@ -2,6 +2,8 @@ namespace WindowRPC.Models;
 
 internal sealed class DefaultSettings
 {
+    public bool WhitelistMode { get; init; }
+
     public string Details { get; init; } = "Currently using:";
 
     public string State { get; init; } = "timestamp - appname";

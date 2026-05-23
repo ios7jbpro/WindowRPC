@@ -54,11 +54,35 @@ internal sealed class ArtworkService : IDisposable
         string? resolved = null;
         foreach (var source in sources)
         {
-            resolved = await ResolveFromSourceAsync(source, entry, media, cancellationToken).ConfigureAwait(false);
+            var normalizedSource = source.Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(normalizedSource))
+            {
+                continue;
+            }
+
+            try
+            {
+                DiagnosticLog.Write($"Trying artwork source '{normalizedSource}' for '{media.Artist}' - '{media.Album}'.");
+                resolved = await ResolveFromSourceAsync(normalizedSource, entry, media, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticLog.Write($"Artwork source '{normalizedSource}' failed: {ex.Message}");
+                continue;
+            }
+
             if (!string.IsNullOrWhiteSpace(resolved))
             {
+                DiagnosticLog.Write($"Artwork source '{normalizedSource}' resolved: {resolved}");
                 break;
             }
+
+            DiagnosticLog.Write($"Artwork source '{normalizedSource}' found no match.");
+        }
+
+        if (string.IsNullOrWhiteSpace(resolved))
+        {
+            DiagnosticLog.Write($"No artwork resolved for '{media.Artist}' - '{media.Album}'.");
         }
 
         _cache[cacheKey] = new CacheEntry(resolved, DateTimeOffset.UtcNow.AddMinutes(30));
@@ -71,7 +95,7 @@ internal sealed class ArtworkService : IDisposable
         MediaSnapshot media,
         CancellationToken cancellationToken)
     {
-        return source.Trim().ToLowerInvariant() switch
+        return source switch
         {
             "musicbrainz" => await ResolveFromMusicBrainzAsync(media, cancellationToken).ConfigureAwait(false),
             "itunes" => await ResolveFromItunesAsync(media, cancellationToken).ConfigureAwait(false),
