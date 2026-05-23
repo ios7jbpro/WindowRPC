@@ -1,3 +1,6 @@
+> [!WARNING]
+> The Python version of this project (`discordrpc.py` and related files) is **outdated and deprecated**. Please use the new C# (.NET 8) implementation found in this repository. The Python files are kept here for reference only and should not be used.
+
 # WindowRPC
 WindowRPC is a C# (.NET 8) Windows application that automatically updates your Discord status with your currently focused window as Rich Presence. It offers flexible options such as custom statuses per application, allowing you to tailor your Discord presence to your preferences.
 
